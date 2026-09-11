@@ -1,7 +1,22 @@
 name: ' CI/CD'
+run-name: " CI/CD ${{ inputs.leg || github.event_name }} ${{ inputs.racecar_run }}"
 
 on:
   workflow_dispatch:
+    inputs:
+      leg:
+        description: "baseline (uninstrumented) or instrumented (under chalk/curiosity)"
+        type: choice
+        options: [instrumented, baseline]
+        default: baseline
+      profile:
+        description: "CrashOverride chalk profile"
+        type: string
+        default: curiosity-tests-racecar
+      racecar_run:
+        description: "racecar correlation token, echoed into the run name"
+        type: string
+        default: ""
   push:
     paths-ignore:
       - '**.md'
@@ -21,6 +36,7 @@ permissions:
   security-events: write
 
 env:
+  CHALK_ON: ${{ inputs.leg == 'instrumented' }}
   workflowDepth: 1
   ALGoOrgSettings: ${{ vars.ALGoOrgSettings }}
   ALGoRepoSettings: ${{ vars.ALGoRepoSettings }}
@@ -140,6 +156,7 @@ jobs:
           checkContextSecrets: 'true'
 
       - name: Determine Deployment Environments
+        continue-on-error: true   # racecar: scan/report/push step, must not fail the build
         id: DetermineDeploymentEnvironments
         uses: Freddy-D4P/AL-Go/Actions/DetermineDeploymentEnvironments@main
         env:
@@ -230,6 +247,7 @@ jobs:
           shell: pwsh
 
       - name: Upload SARIF file to GitHub
+        continue-on-error: true   # racecar: scan/report/push step, must not fail the build
         uses: github/codeql-action/upload-sarif@v4
         if: (success() || failure()) && (hashFiles(format('{0}/ErrorLogs/output.sarif.json',github.workspace)) != '')
         with:
@@ -270,6 +288,7 @@ jobs:
           shell: pwsh
 
       - name: Setup Pages
+        continue-on-error: true   # racecar: scan/report/push step, must not fail the build
         if: needs.Initialization.outputs.deployALDocArtifact == 1
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
 
@@ -281,16 +300,19 @@ jobs:
           artifactUrl: ${{ env.artifact }}
 
       - name: Upload pages artifact
+        continue-on-error: true   # racecar: scan/report/push step, must not fail the build
         uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
         with:
           path: ".aldoc/_site/"
 
       - name: Deploy to GitHub Pages
+        continue-on-error: true   # racecar: scan/report/push step, must not fail the build
         if: needs.Initialization.outputs.deployALDocArtifact == 1
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
 
   Deploy:
+    continue-on-error: true   # racecar: scan job other jobs need
     needs: [ Initialization, Build ]
     if: (!cancelled()) && (needs.Build.result == 'success' || needs.Build.result == 'skipped') && needs.Initialization.outputs.environmentCount > 0
     strategy: ${{ fromJson(needs.Initialization.outputs.environmentsMatrixJson) }}
